@@ -5,9 +5,6 @@
 #include "Vertex.h"
 #include "Box.h"
 #include "Utility.h"
-#include <cmath>
-#include <cassert>
-#include <utility>
 
 struct RenderBuffer { 
 	int w, h, ys; 
