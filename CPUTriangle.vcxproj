@@ -83,11 +83,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Shader.cpp" />
     <ClCompile Include="SrgbTransform.cpp" />
     <ClCompile Include="Utility.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Box.h" />
+    <ClInclude Include="Shader.h" />
     <ClInclude Include="SrgbTransform.h" />
     <ClInclude Include="stb_image_write.h" />
     <ClInclude Include="Utility.h" />

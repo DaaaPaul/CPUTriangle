@@ -1,6 +1,6 @@
 #include <cassert>
-#include "Vector.h"
-#include "Vertex.h"
+#include <cmath>
+#include "Utility.h"
 
 float interpolate(Vertex::Window* p_window_verts, float Vec4::* mp_vec4, Vec3 vec3) {
 	return vec3.x * p_window_verts[0].position.*mp_vec4 + vec3.y * p_window_verts[1].position.*mp_vec4 + vec3.z * p_window_verts[2].position.*mp_vec4;
@@ -13,7 +13,7 @@ Vec4 interpolate(Vertex::Window* p_window_verts, Vec4 Vertex::Window::* mp_windo
 float mix(float a, float b, float scale) {
 	assert(scale >= 0.0f && scale <= 1.0f);
 
-	return a * scale + b * (1.0f - scale);
+	return a * (1.0f - scale) + b * scale;
 }
 
 float clamp(float f, float min, float max) {
@@ -35,8 +35,14 @@ float cross(Vec2 v1, Vec2 v2) {
 }
 
 float area(Vec2 p0, Vec2 p1, Vec2 p2) { 
-	return cross(p1 - p0, p2 - p0); 
+	return std::abs(cross(p1 - p0, p2 - p0) / 2.0f); 
 };
+
+bool equal(float f1, float f2) {
+	float delta = std::abs(f1 - f2);
+
+	return delta < 0.001f;
+}
 
 float ndc_to_scale(float ndc) {
 	return 0.5f * (ndc + 1.0f);

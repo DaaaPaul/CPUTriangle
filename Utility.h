@@ -17,4 +17,6 @@ float cross(Vec2 v1, Vec2 v2);
 
 float area(Vec2 p0, Vec2 p1, Vec2 p2);
 
+bool equal(float f1, float f2);
+
 float ndc_to_scale(float ndc);

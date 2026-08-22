@@ -5,38 +5,14 @@
 #include "Vertex.h"
 #include "Box.h"
 #include "Utility.h"
+#include "Shader.h"
+#include <iostream>
 
 struct RenderBuffer { 
 	int w, h, ys; 
 	void* data; 
 };
 
-Vertex::Clip vertex_shader(Vertex::In in) {
-	Vertex::Clip out{};
-
-	out.SV_Position = Vec4(in.position.x, in.position.y, -2 * in.position.z - 2 * in.position.w, -in.position.z);
-    out.texcoord = in.texcoord;
-    out.color = in.color;
-
-	return out;
-}
-
-Vec4 fragment_shader(Vertex::Interpolated in) {
-    Vec4 out = in.color;
-	
-	Vec2 wrapped = Vec2(in.texcoord.x, in.texcoord.y) - Vec2(std::floor(in.texcoord.x), std::floor(in.texcoord.y));
-    bool brighter = (wrapped.x < 0.5) != (wrapped.y < 0.5);
-    
-	if(!brighter) {
-		out.x *= 0.5f;
-		out.y *= 0.5f;
-		out.z *= 0.5f;
-	}
-
-	return out;
-}
-
-// render output unit/render operations pipeline
 void render(RenderBuffer& buf, int x, int y, Vec4 color) {
     uint8_t* p = reinterpret_cast<uint8_t*>(buf.data) + buf.ys * (buf.h - y - 1) + 4 * x;
     p[0] = SrgbTransform::linearToSrgb8bit(color.x);
@@ -45,38 +21,44 @@ void render(RenderBuffer& buf, int x, int y, Vec4 color) {
     p[3] = std::lround(color.w * 255);
 }
 
-void draw_triangle(RenderBuffer& color_attachment, Box2 viewport, const Vertex::In* in_verts) {
+void draw_triangle(RenderBuffer& color_attachment, Box2 window, const Vertex::In* in_verts) {
 	Vertex::Clip clip_verts[3]{};
 	Vertex::NDC ndc_verts[3]{};
 	Vertex::Window window_verts[3]{};
-    Box2 aabb{ Vec2{}, Vec2{} };
 
     for(int i = 0; i < 3; ++i) {
-        clip_verts[i] = vertex_shader(in_verts[i]);
+        clip_verts[i] = Shader::vertex(in_verts[i]);
 
 		ndc_verts[i].position = perspective_divide(clip_verts[i].SV_Position);
 		ndc_verts[i].texcoord = clip_verts[i].texcoord;
 		ndc_verts[i].color = clip_verts[i].color;
 
 		window_verts[i].position = 
-			Vec4(mix(viewport.top_left.x, viewport.bottom_right.x, ndc_to_scale(ndc_verts[i].position.x)), 
-			     mix(viewport.top_left.y, viewport.bottom_right.y, ndc_to_scale(ndc_verts[i].position.y)),
+			Vec4(mix(window.top_left.x /* 0.0f */, window.bottom_right.x /* 512.0f */, ndc_to_scale(ndc_verts[i].position.x)), 
+			     mix(window.top_left.y /* 0.0f */, window.bottom_right.y /* 512.0f */, ndc_to_scale(ndc_verts[i].position.y)),
 				 ndc_verts[i].position.z,
 				 ndc_verts[i].position.w);
 		window_verts[i].texcoord = clip_verts[i].texcoord;
 		window_verts[i].color = clip_verts[i].color;
-
-        aabb.join(Vec2(window_verts[i].position));
     }
-
-    float triangle_area = area(Vec2(window_verts[0].position), Vec2(window_verts[1].position), Vec2(window_verts[2].position));
+	
+	Box2 aabb(window_verts);
     iBox2 iaabb(aabb);
+    float triangle_area = area(Vec2(window_verts[0].position), Vec2(window_verts[1].position), Vec2(window_verts[2].position));
 
-    for(int y = iaabb.top_left.y; y >= iaabb.bottom_right.y; --y) {
-		for(int x = iaabb.top_left.x; x <= iaabb.bottom_right.x; ++x) {
-			Vec4 frag_position(x + 0.5f, y + 0.5f, 0.0f, 0.0f);
+	int xxx = 0;
+
+    for(int y = iaabb.top_left.y; y <= iaabb.bottom_right.y; ++y) {
+		for(int x = iaabb.top_left.x; x <= iaabb.bottom_right.x; ++x, ++xxx) {
+			Vec4 frag_position{ x + 0.5f, y + 0.5f };
 
 			// fragment barycentric coordinates in window coordinates
+			if(xxx < 1) {
+				std::cout << area(Vec2(frag_position), Vec2(window_verts[1].position), Vec2(window_verts[2].position)) << '\n';
+				std::cout << area(Vec2(window_verts[0].position), Vec2(frag_position), Vec2(window_verts[2].position)) << '\n';
+				std::cout << area(Vec2(window_verts[0].position), Vec2(window_verts[1].position), Vec2(frag_position)) << '\n';
+			}
+
 			Vec3 barycentric(
 				area(Vec2(frag_position), Vec2(window_verts[1].position), Vec2(window_verts[2].position)) / triangle_area,
 				area(Vec2(window_verts[0].position), Vec2(frag_position), Vec2(window_verts[2].position)) / triangle_area,
@@ -84,7 +66,7 @@ void draw_triangle(RenderBuffer& color_attachment, Box2 viewport, const Vertex::
 			);
 
 			// discard fragment outside the triangle. this doesn't handle edges correctly.
-			if(barycentric.x < 0 || barycentric.y < 0 || barycentric.z < 0) continue;
+			if((barycentric.x + barycentric.y + barycentric.z) != 1.0f) continue;
 
 			// interpolate inverse depth linearly
 			frag_position.z = interpolate(window_verts, &Vec4::z, barycentric);
@@ -103,7 +85,7 @@ void draw_triangle(RenderBuffer& color_attachment, Box2 viewport, const Vertex::
 				interpolate(window_verts, &Vertex::Window::color, perspective),
 			};
 
-			render(color_attachment, x, y, fragment_shader(interpolated));
+			render(color_attachment, x, y, Shader::fragment(interpolated));
 		}
 	}
 }
@@ -112,15 +94,14 @@ int main() {
 	constexpr int w = 512, h = 512, ys = 512 * 4;
     RenderBuffer buffer(w, h, ys, calloc(ys, h));
 
-    // position, texcoord, color
     constexpr Vertex::In vertex_buffer[] = {
-        { { 1, -1, -1, 1 }, { 10, 0, 0, 1 }, { 1, 0, 0, 1 } },
-        { { 0, 1, -1, 1 }, { 0, 10, 0, 1 }, { 0, 1, 0, 1 } },
-        { { -1, -1, -2, 1 }, { 0, 0, 0, 1 }, { 0, 0, 1, 1 } },
+        { { 1.0f, -1.0f, 0.0f, 1.0f }, { 10.0f, 0.0f, 0.0f, 1.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
+        { { 0.0f, 1.0f, 0.0f, 1.0f }, { 0.0f, 10.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
+        { { -1.0f, -1.0f, 2.0f, 2.0f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } },
     };
 
-    Box2 viewport(Vec2(0, 0), Vec2(buffer.w, buffer.h));
-    draw_triangle(buffer, viewport, vertex_buffer);
+	Box2 window{ Vec2{0.0f, 0.0f}, Vec2{ static_cast<float>(buffer.w), static_cast<float>(buffer.h) } };
+    draw_triangle(buffer, window, vertex_buffer);
 
     stbi_write_png("render/out.png", buffer.w, buffer.h, 4, buffer.data, buffer.ys);
 
